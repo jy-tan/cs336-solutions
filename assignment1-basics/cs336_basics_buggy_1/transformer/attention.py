@@ -43,15 +43,13 @@ def scaled_dot_product_attention(
     qk_dot_product = einsum(Q, K, " ... q d_k, ... k d_k -> ... q k")
     # "How well does each query match each key?"
 
-    # scaled_qk_dot_product = qk_dot_product * (d_k**0.5)  # BUG: should be divide by sqrt(d_k)
-    scaled_qk_dot_product = qk_dot_product / (d_k ** 0.5)
+    scaled_qk_dot_product = qk_dot_product * (d_k**0.5)  # BUG: should be divide by sqrt(d_k)
 
     # Mask before softmax
     if mask is not None:
         scaled_qk_dot_product = scaled_qk_dot_product.masked_fill(~mask, -float("inf"))
 
-    # attention_weights = softmax(scaled_qk_dot_product, dimension=-2)  # BUG: softmax on the last dimension (keys)
-    attention_weights = softmax(scaled_qk_dot_product, dimension=-1)
+    attention_weights = softmax(scaled_qk_dot_product, dimension=-2)  # BUG: softmax on the last dimension (keys)
     # "For each query, what proportion of each key?"
 
     output = einsum(attention_weights, V, " ... q k, ... k d_v -> ... q d_v")
