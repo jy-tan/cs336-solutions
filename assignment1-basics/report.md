@@ -310,7 +310,7 @@ Now, the attention mechanism has the largest proportion of total FLOPs. It is th
 
 ### Cross entropy
 
-See [`training/loss.py`](/cs336_basics/training/loss.py).
+See [`training/loss.py`](./cs336_basics/training/loss.py).
 
 ### Tuning the learning rate
 
@@ -372,10 +372,57 @@ At a high learning rate (e.g, 100 or 1000), loss decreases quickly initially but
 
 ### AdamW optimizer
 
-See [`training/optimizer.py`](/cs336_basics/training/optimizer.py).
+See [`training/optimizer.py`](./cs336_basics/training/optimizer.py).
 
 Resource accounting: (todo)
 
 ### Cosine LR scheduler, gradient clipping
 
-See [`training/optimizer.py`](/cs336_basics/training/optimizer.py).
+See [`training/optimizer.py`](./cs336_basics/training/optimizer.py).
+
+## Training Loop
+
+- Data loader: [`training/data.py`](./cs336_basics/training/data.py)
+- Model checkpointing: [`training/checkpoint.py`](./cs336_basics/training/checkpoint.py)
+
+The training loop is implemented on the Trainer class ([`training/trainer.py`](./cs336_basics/training/trainer.py)). [`train.py`](./cs336_basics/train.py) is a script accepting arguments to start model training. Configs are defined in [`config/`](./cs336_basics/config/).
+
+First, create the tokenized datasets.
+
+```bash
+uv run python -m cs336_basics.tokenize_data \
+    --vocab results/TinyStoriesV2_GPT4_train_vocab.pkl \
+    --merges results/TinyStoriesV2_GPT4_train_merges.pkl \
+    --input data/TinyStoriesV2-GPT4-train.txt \
+    --output tokenized_data/TinyStoriesV2-GPT4-train.npy
+
+uv run python -m cs336_basics.tokenize_data \
+    --vocab results/TinyStoriesV2_GPT4_valid_vocab.pkl \
+    --merges results/TinyStoriesV2_GPT4_valid_merges.pkl \
+    --input data/TinyStoriesV2-GPT4-valid.txt \
+    --output tokenized_data/TinyStoriesV2-GPT4-valid.npy
+```
+
+The TinyStories training set has 541M tokens.
+
+To train the model:
+
+```bash
+uv run python -m cs336_basics.train
+
+# Override multiple settings
+uv run python -m cs336_basics.train \
+    --config-override '{"model": {"d_model": 256, "num_layers": 4}, "optimizer": {"max_lr": 1e-3}}'
+
+# Or from a file
+uv run python -m cs336_basics.train \
+    --config-override "$(cat my_config.json)"
+```
+
+## Generating Text
+
+(todo)
+
+## Experiments
+
+(todo)
