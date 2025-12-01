@@ -2,11 +2,11 @@ import os
 import time
 from pathlib import Path
 
-import mlflow
 import numpy as np
 import torch
+import wandb
 
-from cs336_basics.config.schema import Config, flatten_config
+from cs336_basics.config.schema import Config
 from cs336_basics.training.checkpoint import load_checkpoint, save_checkpoint
 from cs336_basics.training.data import get_batch
 from cs336_basics.training.loss import cross_entropy_loss
@@ -21,9 +21,9 @@ class Trainer:
         self.dtype = getattr(torch, config.train.dtype)
 
         self.train_data = np.load(config.data.train_data_path, mmap_mode="r")
-        print(f"Train data: {len(self.train_data)} tokens")
+        print(f"Train data: {len(self.train_data):,} tokens")
         self.val_data = np.load(config.data.val_data_path, mmap_mode="r")
-        print(f"Validation data: {len(self.val_data)} tokens")
+        print(f"Validation data: {len(self.val_data):,} tokens")
 
         self.model = Transformer(
             d_model=config.model.d_model,
@@ -50,9 +50,14 @@ class Trainer:
 
         Path(config.train.checkpoint_dir).mkdir(parents=True, exist_ok=True)
 
-        self.use_mlflow = True
+        self.wandb_run = None
 
         self.iter_num = 0
+
+        # Early stopping state
+        self.best_val_loss = float("inf")
+        self.patience_counter = 0
+        self.patience = config.train.early_stopping_patience
 
     def get_lr(self) -> float:
         """Get learning rate for current iteration using cosine schedule."""
@@ -105,12 +110,6 @@ class Trainer:
     def train(self):
         print(f"Starting training, device={self.device}, max_iters={self.config.train.max_iters}")
 
-        # Start MLflow run
-        if self.use_mlflow:
-            mlflow.set_experiment("cs336-basics")
-            mlflow.start_run(log_system_metrics=True)
-            mlflow.log_params(flatten_config(self.config))
-
         self.model.train()
         t0 = time.time()
 
@@ -157,8 +156,8 @@ class Trainer:
                     f"{tokens_per_sec:.0f} tok/s"
                 )
 
-                if self.use_mlflow:
-                    mlflow.log_metrics(
+                if self.wandb_run:
+                    wandb.log(
                         {
                             "train/loss": loss.item(),
                             "train/lr": lr,
@@ -168,15 +167,13 @@ class Trainer:
                         step=self.iter_num,
                     )
 
-                t0 = time.time()
-
             # Eval
             if self.iter_num > 0 and self.iter_num % self.config.train.eval_interval == 0:
                 losses = self.estimate_loss()
-                print(f"iter {self.iter_num} | train_loss {losses['train']:.4f} | val_loss {losses['val']:.4f}")
+                print(f"iter {self.iter_num:6d} | train_loss {losses['train']:.4f} | val_loss {losses['val']:.4f}")
 
-                if self.use_mlflow:
-                    mlflow.log_metrics(
+                if self.wandb_run:
+                    wandb.log(
                         {
                             "eval/train_loss": losses["train"],
                             "eval/val_loss": losses["val"],
@@ -184,16 +181,31 @@ class Trainer:
                         step=self.iter_num,
                     )
 
+                # Early stopping (only after warmup)
+                if self.patience > 0 and self.iter_num > self.config.train.warmup_iters:
+                    if losses["val"] < self.best_val_loss:
+                        self.best_val_loss = losses["val"]
+                        self.patience_counter = 0
+                        self.save(os.path.join(self.config.train.checkpoint_dir, "checkpoint_best.pt"))
+                        print(f"  ↳ New best val_loss: {self.best_val_loss:.4f}")
+                    else:
+                        self.patience_counter += 1
+                        print(f"  ↳ No improvement for {self.patience_counter}/{self.patience} evals")
+
+                        if self.patience_counter >= self.patience:
+                            print(f"Early stopping at iter {self.iter_num}! Best val_loss: {self.best_val_loss:.4f}")
+                            break
+
             # Checkpointing
             if self.iter_num > 0 and self.iter_num % self.config.train.checkpoint_interval == 0:
                 self.save()
 
+            # Reset timer
+            if self.iter_num % self.config.train.log_interval == 0:
+                t0 = time.time()
+
             self.iter_num += 1
 
         self.save(os.path.join(self.config.train.checkpoint_dir, "checkpoint_final.pt"))
-
-        if self.use_mlflow:
-            mlflow.log_artifact(os.path.join(self.config.train.checkpoint_dir, "checkpoint_final.pt"))
-            mlflow.end_run()
 
         print("Training complete.")

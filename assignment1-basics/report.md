@@ -405,7 +405,7 @@ uv run python -m cs336_basics.tokenize_data \
 
 The TinyStories training set has 541M tokens.
 
-To train the model:
+To train the model locally:
 
 ```bash
 uv run python -m cs336_basics.train
@@ -417,6 +417,24 @@ uv run python -m cs336_basics.train \
 # Or from a file
 uv run python -m cs336_basics.train \
     --config-override "$(cat my_config.json)"
+```
+
+Modal provides GPUs to help accelerate training. See [train_modal.py](./cs336_basics/train_modal.py) for container setup and serverless function definitions.
+
+```bash
+# Setup
+uv run modal setup
+uv run wandb login
+
+uv run modal secret create wandb-secret WANDB_API_KEY=...
+
+# Create modal volume and copy tokenized datasets
+uv run modal volume create cs336-data
+uv run modal volume put cs336-data tokenized_data/TinyStoriesV2-GPT4-train.npy TinyStoriesV2-GPT4-train.npy
+uv run modal volume put cs336-data tokenized_data/TinyStoriesV2-GPT4-valid.npy TinyStoriesV2-GPT4-valid.npy
+
+# Run the training script
+uv run modal run cs336_basics/train_modal.py
 ```
 
 ## Generating Text

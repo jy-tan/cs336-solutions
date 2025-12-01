@@ -3,10 +3,10 @@ import json
 from dataclasses import replace
 from pathlib import Path
 
-import mlflow
+import wandb
 
 from cs336_basics.config.default import defaultConfig
-from cs336_basics.config.schema import Config
+from cs336_basics.config.schema import Config, flatten_config
 from cs336_basics.training.trainer import Trainer
 
 MLFLOW_TRACKING_URI = "http://localhost:5050"
@@ -70,14 +70,20 @@ def main():
         overrides = json.loads(args.config_override)
         config = apply_overrides(config, overrides)
 
-    mlflow.set_tracking_uri(MLFLOW_TRACKING_URI)
+    run = wandb.init(
+        project="cs336-basics",
+        config=flatten_config(config),
+    )
 
     trainer = Trainer(config)
+    trainer.wandb_run = run
 
     if args.resume:
         trainer.load(args.resume)
 
     trainer.train()
+
+    wandb.finish()
 
 
 if __name__ == "__main__":

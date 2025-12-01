@@ -5,7 +5,7 @@ from dataclasses import asdict, dataclass
 class ModelConfig:
     d_model: int = 512
     num_heads: int = 8
-    d_ff: int = 1408  # (8/3) * 512, rounded to multiple of 64
+    d_ff: int = 1344  # (8/3) * 512, rounded to multiple of 64
     num_layers: int = 6
     theta: float = 10_000.0
     vocab_size: int = 10_000
@@ -27,7 +27,7 @@ class OptimizerConfig:
 class DataConfig:
     train_data_path: str = "data/train.npy"
     val_data_path: str = "data/val.npy"
-    batch_size: int = 64
+    batch_size: int = 128
 
 
 @dataclass
@@ -41,6 +41,7 @@ class TrainConfig:
     log_interval: int = 10
     checkpoint_interval: int = 5_000
     checkpoint_dir: str = "checkpoints"
+    early_stopping_patience: int = 10  # 0 to disable
 
 
 @dataclass
