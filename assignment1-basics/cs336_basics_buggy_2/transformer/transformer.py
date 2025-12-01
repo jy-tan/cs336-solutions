@@ -53,10 +53,10 @@ class TransformerBlock(nn.Module):
         """
         # Multi-head attention sublayer
         x = self.ln1(x)
-        x = self.attn(x, token_positions=token_positions)
+        x = self.attn(x, token_positions=token_positions)  # BUG: missing residual connection `+ x`
 
         # Feed-forward sublayer
-        x_orig = x.clone()
+        x_orig = x.clone()  # BUG: this should be before ln1.
         x = self.ln2(x)
         x = self.ffn(x) + x_orig
 

@@ -79,6 +79,9 @@ class AdamW(torch.optim.Optimizer):
 
                 alpha_t = lr * math.sqrt(1 - beta2**t) / (1 - beta1**t)
 
+                # BUG: these two operations are flipped
+                # Weight decay should be applied after Adam step
+                # This means weight decay is applied to old weights
                 p.data.add_(p.data, alpha=-lr * weight_decay)
                 p.data.addcdiv_(m, v.sqrt() + eps, value=-alpha_t)
 

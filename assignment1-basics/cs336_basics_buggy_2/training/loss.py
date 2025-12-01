@@ -31,6 +31,6 @@ def cross_entropy_loss(logits: Float[Tensor, " ... seq_len vocab_size"], targets
     batch_seq_size = logits_flat.shape[0]
     target_log_probs: Float[Tensor, " batch_seq_flat"] = log_probs[torch.arange(batch_seq_size), targets_flat]
 
-    loss = target_log_probs.mean()
+    loss = target_log_probs.mean()  # BUG: negative sign, log probs are always positive
 
     return loss

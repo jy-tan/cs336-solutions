@@ -106,6 +106,7 @@ class RMSNorm(nn.Module):
         # result = x * torch.rsqrt(x.pow(2).mean(-1, keepdim=True) + self.eps) * self.weight
 
         # einops implementation
+        # BUG: eps should be inside the rsqrt
         rms_inv = torch.rsqrt(reduce(x**2, "... d_model -> ... 1", "mean")) + self.eps
         result = x * rms_inv * self.weight
 
@@ -230,7 +231,7 @@ class RotaryPositionalEmbedding(nn.Module):
         x1, x2 = x_pairs[..., 0], x_pairs[..., 1]
 
         row1 = x1 * cos - x2 * sin
-        row2 = x2 * sin + x1 * cos
+        row2 = x2 * sin + x1 * cos  # BUG: should be x1 * sin + x2 * cos
         rotated = torch.stack([row1, row2], dim=-1)
         rotated = rearrange(rotated, "... seq_len d_k_half t -> ... seq_len (d_k_half t)", t=2)
         return rotated.to(in_dtype)
@@ -267,4 +268,4 @@ def softmax(x: Tensor, dimension: int):
     exp_x = torch.exp(x - x_max)
 
     # Sum along dimension
-    return exp_x / exp_x.sum(-1, keepdim=True)
+    return exp_x / exp_x.sum(-1, keepdim=True)  # BUG: should be .sum(dimension, keepdim=True)
