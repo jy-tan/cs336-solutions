@@ -87,7 +87,7 @@ class CausalMultiHeadAttention(nn.Module):
 
         # Lower triangle is 1, including diagonals
         # True = pass through, False = mask
-        causal_mask = torch.tril(torch.ones(max_seq_len, max_seq_len, dtype=torch.bool))
+        causal_mask = torch.tril(torch.ones(max_seq_len, max_seq_len, dtype=torch.bool)).to(device)
         self.register_buffer("causal_mask", causal_mask)
 
     def forward(
@@ -133,8 +133,13 @@ class CausalMultiHeadAttention(nn.Module):
         V = rearrange(V, "... seq_len (num_heads d_v) -> ... num_heads seq_len d_v", num_heads=self.num_heads)
 
         if token_positions is not None:
-            Q = self.rope(Q, token_positions=token_positions)
-            K = self.rope(K, token_positions=token_positions)
+            # Expand token_positions to match Q's shape: (batch, seq_len) -> (batch, num_heads, seq_len)
+            token_positions_expanded = token_positions.unsqueeze(-2).expand(
+                *token_positions.shape[:-1], self.num_heads, token_positions.shape[-1]
+            )
+
+            Q = self.rope(Q, token_positions=token_positions_expanded)
+            K = self.rope(K, token_positions=token_positions_expanded)
 
         mask = self.causal_mask[:seq_len, :seq_len]
 

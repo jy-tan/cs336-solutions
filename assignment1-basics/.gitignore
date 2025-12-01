@@ -163,5 +163,12 @@ cython_debug/
 *.zip
 
 .vscode/
+
+# Datasets
 data/
 results/
+tokenized_data/
+
+# Experiment tracking
+mlruns/
+mlflow.db

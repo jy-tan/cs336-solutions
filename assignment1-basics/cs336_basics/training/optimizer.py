@@ -96,6 +96,10 @@ def cosine_lr_schedule(it, max_learning_rate, min_learning_rate, warmup_iters, c
 
 
 def clip_gradients(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float):
+    """
+    Clip gradients to prevent training instability.
+    Computes global L2 norm of all gradients and clips them if they exceed `max_l2_norm`.
+    """
     eps = 1e-6
 
     grads = [p.grad for p in parameters if p.grad is not None]
@@ -103,9 +107,14 @@ def clip_gradients(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float)
     if len(grads) == 0:
         return torch.tensor(0.0)
 
+    # These are equivalent:
+    # - norm(stack([norm(a), norm(b)]), 2)
+    # - sqrt(norm(a)² + norm(b)²)
+    # - norm(concat(a, b))
     total_norm = torch.norm(torch.stack([torch.norm(g.detach(), 2) for g in grads]), 2)
 
     if total_norm > max_l2_norm:
+        # Scale all gradients by the same factor
         for g in grads:
             g.detach().mul_(max_l2_norm / (total_norm + eps))
 
