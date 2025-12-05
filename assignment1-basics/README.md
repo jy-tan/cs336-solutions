@@ -1,3 +1,9 @@
+# Report
+
+See [report.md](./report.md) for my writeup for this assignment.
+
+---
+
 # CS336 Spring 2025 Assignment 1: Basics
 
 For a full description of the assignment, see the assignment handout at
