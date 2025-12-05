@@ -105,7 +105,7 @@ class Trainer:
 
         return losses
 
-    def save(self, path: str | None) -> None:
+    def save(self, path: str | None = None) -> None:
         if path is None:
             path = os.path.join(self.config.train.checkpoint_dir, f"checkpoint_{self.iter_num}.pt")
 
