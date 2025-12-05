@@ -56,6 +56,7 @@ def train(config_override: dict | None = None):
         train=replace(
             config.train,
             device="cuda",
+            dtype="bfloat16",
             checkpoint_dir="/data/checkpoints",
         ),
     )
@@ -81,9 +82,24 @@ def train(config_override: dict | None = None):
 
 @app.local_entrypoint()
 def main():
-    train.remote(
-        config_override={
-            # "model": {"d_model": 768, "num_layers": 12},
-            # "optimizer": {"max_lr": 3e-4},
-        }
-    )
+    # train.remote(config_override={})
+
+    learning_rates = [1e-4, 3e-4, 6e-4, 1e-3, 3e-3, 6e-3]
+
+    handles = []
+    for lr in learning_rates:
+        handle = train.spawn(
+            config_override={
+                "optimizer": {"max_lr": lr, "min_lr": lr / 10},
+                "train": {
+                    "max_iters": 10000,
+                    "warmup_iters": 500,
+                    "early_stopping_patience": 0,
+                },
+            }
+        )
+        handles.append((lr, handle))
+
+    for lr, handle in handles:
+        _ = handle.get()
+        print(f"LR {lr}: completed")
