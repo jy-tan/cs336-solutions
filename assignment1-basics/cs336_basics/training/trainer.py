@@ -20,6 +20,10 @@ class Trainer:
         self.device = config.train.device
         self.dtype = getattr(torch, config.train.dtype)
 
+        if self.device == "cuda":
+            # Enable TF32 for faster float32 matmuls on Ampere+ GPUs
+            torch.set_float32_matmul_precision("high")
+
         self.train_data = np.load(config.data.train_data_path, mmap_mode="r")
         print(f"Train data: {len(self.train_data):,} tokens")
         self.val_data = np.load(config.data.val_data_path, mmap_mode="r")
@@ -36,6 +40,11 @@ class Trainer:
             device=self.device,
             dtype=self.dtype,
         )
+
+        if self.device == "mps":
+            self.model = torch.compile(self.model, backend="aot_eager")
+        else:
+            self.model = torch.compile(self.model)
 
         num_params = sum(p.numel() for p in self.model.parameters())
         print(f"Model parameters: {num_params:,}")

@@ -33,7 +33,7 @@ class DataConfig:
 @dataclass
 class TrainConfig:
     device: str = "mps"
-    dtype: str = "float32"
+    dtype: str = "bfloat16"
     max_iters: int = 100_000
     warmup_iters: int = 2_000  # ~1-5% of total
     eval_interval: int = 100
