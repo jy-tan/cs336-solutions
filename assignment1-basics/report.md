@@ -397,8 +397,8 @@ uv run python -m cs336_basics.tokenize_data \
     --output tokenized_data/TinyStoriesV2-GPT4-train.npy
 
 uv run python -m cs336_basics.tokenize_data \
-    --vocab results/TinyStoriesV2_GPT4_valid_vocab.pkl \
-    --merges results/TinyStoriesV2_GPT4_valid_merges.pkl \
+    --vocab results/TinyStoriesV2_GPT4_train_vocab.pkl \
+    --merges results/TinyStoriesV2_GPT4_train_merges.pkl \
     --input data/TinyStoriesV2-GPT4-valid.txt \
     --output tokenized_data/TinyStoriesV2-GPT4-valid.npy
 ```
@@ -439,7 +439,7 @@ uv run modal run cs336_basics/train_modal.py
 
 ## Generating Text
 
-(todo)
+See `generate()` in the [Transformer class](./cs336_basics/transformer/transformer.py).
 
 ## Experiments
 
