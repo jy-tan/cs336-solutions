@@ -443,4 +443,78 @@ See `generate()` in the [Transformer class](./cs336_basics/transformer/transform
 
 ## Experiments
 
+### Tune the learning rate
+
+(a) Perform a hyperparameter sweep over the learning rates and report the final losses (or note divergence if the optimizer diverges).
+
+I performed a logarithmic grid search over these learning rate values: [1e-4, 3e-4, 6e-4, 1e-3, 3e-3, 6e-3].
+
+Results:
+
+| Run name | LR | Final Val Loss | Notes |
+|----------|----|----------------|-------|
+| rich-universe-15 | 1e-4 | 2.70 | Underfitting, LR too low |
+| proud-dragon-16 | 3e-4 | 1.76 | Still slow convergence |
+| radiant-resonance-18 | 6e-4 | 1.48 | Good |
+| cerulean-field-17 | 1e-3 | 1.40 | Good |
+| still-brook-19 | 3e-3 | 1.38 | ⭐️ Best |
+| devout-water-20 | 6e-3 | 2.46 | Unstable, with grad norms 30-100+ |
+
+![LR sweep learning curves](./learning_curves/lr-sweep.png)
+
+(b) Folk wisdom is that the best learning rate is “at the edge of stability.” Investigate how the point at which learning rates diverge is related to your best learning rate.
+
+The best LR is 3e-3, which is right at the edge before 6e-3 becomes unstable and divergent. This is consistent with the folk wisdom that pushing the LR as high as possible without diverging gives the best results.
+
+### Generate text
+
+```bash
+uv run python -m cs336_basics.generate
+```
+
+Generated text: (temperature=0.7, top-p=0.9):
+
+> Once upon a time, there was a little boy named Tim. Tim had a toy car that he loved to play with every day. One day, he saw a big hill and wanted to go up it. He asked his mom, "Can I go up the hill?"
+>
+>His mom said, "No, Tim. You can't go up the hill. It is too high." But Tim was stubborn and did not listen to his mom. He tried to climb the hill, but he was too small.
+>
+> Tim tried and tried, but he could not get to the top. He was sad. His mom saw him and said, "Don't worry, Tim. You can try again." Tim tried again and again. He got to the top and climbed the hill. He was happy and his mom was proud of him.
+> <|endoftext|>
+>
+>(170 tokens generated)
+
+The output is highly fluent - it's grammatically correct, has a coherent structure (setup, conflict, resolution), very appropriate for the TinyStories domain (simple children's stories).
+
+Temperature can be a factor that affects output quality, compare the above output with these:
+
+With temperatue=0.0, top-p=1.0:
+
+> Once upon a time, there was a little girl named Lily. She loved to play with her toys and have fun. One day, she found a big, red ball in her room. She was very happy and wanted to play with it.
+>
+>Lily took the ball outside to play. She threw it up in the air and caught it. She threw it high in the air and caught it. Lily laughed and clapped her hands. She played with the ball all day long.
+>
+> But then, something unexpected happened. The ball went too high and got stuck in a tree. Lily tried to get it down, but she could not reach it. She was sad and cried. Her mom came and helped her get the ball down. Lily learned that she should not play with things that are not hers.
+> <|endoftext|>
+>
+> (163 tokens generated)
+
+At lower temperature, the story seems to be more coherent, but we can see repetitive and short sentence structures.
+
+With temperatue=1.0, top-p=0.9:
+
+>Once upon a time there was a generous dog named Bob. Bob had a cane that he loved very much. He would carry the cane everywhere he went.
+>
+> One day, Bob found his cane near a girl. The girl said, "Bob, if you do not carry my cane, or your chain will come out!" Bob felt sad but he did try again.
+>
+> Bob walked up to the girl and said, "Please help me!" The girl smiled and said, "Thank you!" Bob willing to help the girl get her cane back. They became good friends and played together all day. And Bob learned that it is always good to help others.
+> <|endoftext|>
+>
+> (170 tokens generated)
+
+Here, we see that the output is more "creative" but is less coherent (grammatical error, story makes less sense).
+
+Another factor that affects output quality is the training data itself. The model is only trained on simple children's stories, so its output will be of that genre and it will be unable to generate text outside of this distribution.
+
+### Ablations and architecture modification
+
 (todo)

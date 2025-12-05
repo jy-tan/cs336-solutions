@@ -154,7 +154,7 @@ class Transformer(nn.Module):
         """
         for _ in range(max_new_tokens):
             # Truncate to context length if needed (sliding window)
-            context_length = self.layers[0].attn.max_seq_len  # or however you store it
+            context_length = self.layers[0].attn.causal_mask.shape[0]
             if input_ids.shape[1] > context_length:
                 input_ids_cond = input_ids[:, -context_length:]
             else:
