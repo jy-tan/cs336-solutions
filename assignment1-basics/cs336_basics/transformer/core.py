@@ -153,7 +153,7 @@ class SwiGLU(nn.Module):
         """
         # SiLU
         gate = self.w1(x)
-        gate = gate * torch.sigmoid(gate)
+        gate = silu(gate)
 
         # xW3^T
         value = self.w3(x)
@@ -268,3 +268,7 @@ def softmax(x: Tensor, dimension: int):
 
     # Sum along dimension
     return exp_x / exp_x.sum(dimension, keepdim=True)
+
+
+def silu(x: Tensor):
+    return x * torch.sigmoid(x)

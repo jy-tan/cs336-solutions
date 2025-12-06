@@ -16,7 +16,7 @@ from cs336_basics.training.data import get_batch
 from cs336_basics.training.loss import cross_entropy_loss
 from cs336_basics.training.optimizer import AdamW, clip_gradients, cosine_lr_schedule
 from cs336_basics.transformer.attention import CausalMultiHeadAttention, scaled_dot_product_attention
-from cs336_basics.transformer.core import Embedding, Linear, RMSNorm, RotaryPositionalEmbedding, SwiGLU
+from cs336_basics.transformer.core import Embedding, Linear, RMSNorm, RotaryPositionalEmbedding, SwiGLU, silu, softmax
 from cs336_basics.transformer.transformer import Transformer, TransformerBlock
 
 
@@ -442,7 +442,7 @@ def run_silu(in_features: Float[Tensor, " ..."]) -> Float[Tensor, " ..."]:
         Float[Tensor,"..."]: of with the same shape as `in_features` with the output of applying
         SiLU to each element.
     """
-    raise NotImplementedError
+    return silu(in_features)
 
 
 def run_get_batch(
@@ -481,7 +481,7 @@ def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, "
         Float[Tensor, "..."]: Tensor of with the same shape as `in_features` with the output of
         softmax normalizing the specified `dim`.
     """
-    raise NotImplementedError
+    return softmax(in_features, dim)
 
 
 def run_cross_entropy(
