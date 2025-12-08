@@ -9,7 +9,7 @@ import torch
 from jaxtyping import Bool, Float, Int
 from torch import Tensor
 
-from cs336_basics.tokenization import train_bpe_tokenizer_parallel
+from cs336_basics.tokenization import train_bpe_tokenizer_5
 from cs336_basics.tokenizer import BPETokenizer
 from cs336_basics.training.checkpoint import load_checkpoint, save_checkpoint
 from cs336_basics.training.data import get_batch
@@ -639,5 +639,5 @@ def run_train_bpe(
                 representing that <token1> was merged with <token2>.
                 Merges are ordered by order of creation.
     """
-    vocab, merges = train_bpe_tokenizer_parallel(input_path, vocab_size, special_tokens)
+    vocab, merges = train_bpe_tokenizer_5(input_path, vocab_size, special_tokens)
     return vocab, merges

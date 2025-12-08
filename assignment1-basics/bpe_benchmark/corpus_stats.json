@@ -1,0 +1,34 @@
+[
+  {
+    "corpus_path": "benchmark_temp/corpus_1mb.txt",
+    "W": 4658,
+    "L": 6.58,
+    "P": 647,
+    "total_tokens": 30658,
+    "corpus_size_mb": 1
+  },
+  {
+    "corpus_path": "benchmark_temp/corpus_5mb.txt",
+    "W": 8126,
+    "L": 6.81,
+    "P": 796,
+    "total_tokens": 55330,
+    "corpus_size_mb": 5
+  },
+  {
+    "corpus_path": "benchmark_temp/corpus_10mb.txt",
+    "W": 10133,
+    "L": 6.87,
+    "P": 856,
+    "total_tokens": 69605,
+    "corpus_size_mb": 10
+  },
+  {
+    "corpus_path": "benchmark_temp/corpus_25mb.txt",
+    "W": 13109,
+    "L": 6.93,
+    "P": 932,
+    "total_tokens": 90833,
+    "corpus_size_mb": 25
+  }
+]

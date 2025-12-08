@@ -1,6 +1,8 @@
+import heapq
 import json
 import os
 import re
+from collections import defaultdict
 from multiprocessing import Pool
 
 import regex
@@ -9,11 +11,29 @@ from tqdm import tqdm
 PRE_TOKEN_REGEX = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
 
 
-def train_bpe_tokenizer_naive(
+class ReversedBytes:
+    """Wrapper for bytes that reverses comparison order."""
+
+    __slots__ = ("data",)
+
+    def __init__(self, data: bytes):
+        self.data = data
+
+    def __lt__(self, other):
+        return self.data > other.data
+
+    def __eq__(self, other):
+        return self.data == other.data
+
+    def __hash__(self):
+        return hash(self.data)
+
+
+def train_bpe_tokenizer_1(
     input_path: str, vocab_size: int, special_tokens: list[str]
 ) -> (dict[int, bytes], list[tuple[bytes, bytes]]):
     """
-    Train a BPE tokenizer on the input data.
+    Train a BPE tokenizer on the input data. This is the naive implementation.
 
     Args:
         input_path (str | os.PathLike): The path to the input data.
@@ -112,12 +132,13 @@ def train_bpe_tokenizer_naive(
     return vocab, merges
 
 
-def train_bpe_tokenizer_optimized(
+def train_bpe_tokenizer_2(
     input_path: str, vocab_size: int, special_tokens: list[str]
 ) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
     """
     Train a BPE tokenizer on the input data.
-    The merging step is optimized to only compute the frequency of pairs that are affected by each merge.
+    This implementation is an optimized version of the naive implementation.
+    The merging step only compute the frequency of pairs that are affected by each merge.
 
     Args:
         input_path (str | os.PathLike): The path to the input data.
@@ -324,7 +345,7 @@ def save_token_frequencies(word_frequencies: dict[tuple[int, ...], int], vocab: 
     print(f"\nSaved {len(token_freq_list)} token frequencies to {save_path}")
 
 
-def train_bpe_tokenizer_parallel(
+def train_bpe_tokenizer_3(
     input_path: str,
     vocab_size: int,
     special_tokens: list[str],
@@ -368,8 +389,6 @@ def train_bpe_tokenizer_parallel(
             chunk: str = f.read(end - start).decode("utf-8", errors="ignore")
             chunks.append(chunk)
 
-    # with Pool(num_processes) as pool:
-    #     chunk_frequencies = pool.starmap(pretokenize_chunk, [(chunk, special_tokens) for chunk in chunks])
     with Pool(num_processes) as pool:
         args = [(chunk, special_tokens) for chunk in chunks]
 
@@ -395,7 +414,7 @@ def train_bpe_tokenizer_parallel(
     merges: list[tuple[bytes, bytes]] = []
     num_merges = vocab_size - len(vocab)
 
-    # Below is the same as `train_bpe_tokenizer_optimized`
+    # Below is the same as `train_bpe_tokenizer_2`
 
     pair_frequencies: dict[tuple[int, int], int] = {}
 
@@ -458,14 +477,331 @@ def train_bpe_tokenizer_parallel(
     return vocab, merges
 
 
+def train_bpe_tokenizer_4(
+    input_path: str,
+    vocab_size: int,
+    special_tokens: list[str],
+    num_processes: int | None = None,
+) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    """
+    Train a BPE tokenizer on the input data.
+
+    This implementation builds on `train_bpe_tokenizer_3` by adding:
+    - Inverted index (pair → word_ids) to skip unaffected words during merges
+
+    Still uses max() scan for finding the best pair (O(P) per merge).
+
+    Args:
+        input_path: Path to the input corpus file.
+        vocab_size: Target vocabulary size.
+        special_tokens: List of special tokens to preserve.
+        num_processes: Number of parallel processes. Defaults to CPU count.
+
+    Returns:
+        vocab: Mapping from token ID to bytes.
+        merges: Ordered list of BPE merges.
+    """
+    if num_processes is None:
+        num_processes = os.cpu_count() or 4
+
+    num_chunks = num_processes * 3
+
+    # Parallel pretokenization (same as v3)
+    chunks: list[str] = []
+
+    with open(input_path, "rb") as f:
+        boundary_token = special_tokens[0].encode("utf-8") if special_tokens else b"\n"
+        chunk_boundaries = find_chunk_boundaries(f, num_chunks, boundary_token)
+
+        for start, end in zip(chunk_boundaries[:-1], chunk_boundaries[1:]):
+            f.seek(start)
+            chunk: str = f.read(end - start).decode("utf-8", errors="ignore")
+            chunks.append(chunk)
+
+    with Pool(num_processes) as pool:
+        args = [(chunk, special_tokens) for chunk in chunks]
+        chunk_frequencies = list(
+            tqdm(
+                pool.imap(_pretokenize_chunk_wrapper, args, chunksize=1),
+                total=len(chunks),
+                desc="Pretokenizing chunks",
+            )
+        )
+
+    word_frequencies_raw: dict[tuple[int, ...], int] = {}
+    for chunk_frequency in chunk_frequencies:
+        for word, frequency in chunk_frequency.items():
+            word_frequencies_raw[word] = word_frequencies_raw.get(word, 0) + frequency
+
+    # Above this is the same as v3
+
+    vocab = {idx: bytes([idx]) for idx in range(256)}
+
+    words: dict[int, list[int]] = {}  # word_id -> mutable token list
+    word_freqs: dict[int, int] = {}  # word_id -> frequency
+    word_id = 0
+    for word_tuple, freq in word_frequencies_raw.items():
+        words[word_id] = list(word_tuple)
+        word_freqs[word_id] = freq
+        word_id += 1
+
+    # Add special tokens to vocab
+    special_token_id = len(vocab)
+    for special_token in special_tokens:
+        vocab[special_token_id] = special_token.encode("utf-8")
+        special_token_id += 1
+
+    merges: list[tuple[bytes, bytes]] = []
+    num_merges = vocab_size - len(vocab)
+
+    # Build pair frequencies and inverted index
+    pair_frequencies: dict[tuple[int, int], int] = defaultdict(int)
+    pair_to_words: dict[tuple[int, int], set[int]] = defaultdict(set)
+
+    for wid, tokens in words.items():
+        freq = word_freqs[wid]
+        for i in range(len(tokens) - 1):
+            pair = (tokens[i], tokens[i + 1])
+            pair_frequencies[pair] += freq
+            pair_to_words[pair].add(wid)
+
+    # Merge loop: uses inverted index for updates
+    for _ in tqdm(range(num_merges), desc="Computing merges", unit="merge"):
+        if not pair_frequencies:
+            break
+
+        best_pair = max(
+            pair_frequencies.keys(), key=lambda pair: (pair_frequencies[pair], vocab[pair[0]], vocab[pair[1]])
+        )
+
+        new_id = len(vocab)
+        vocab[new_id] = vocab[best_pair[0]] + vocab[best_pair[1]]
+        merges.append((vocab[best_pair[0]], vocab[best_pair[1]]))
+
+        # Only update affected words via inverted index
+        affected_word_ids = list(pair_to_words.get(best_pair, set()))
+
+        for wid in affected_word_ids:
+            tokens = words[wid]
+            freq = word_freqs[wid]
+
+            # Remove old pair counts from frequencies and index
+            for i in range(len(tokens) - 1):
+                p = (tokens[i], tokens[i + 1])
+                pair_frequencies[p] -= freq
+                if pair_frequencies[p] <= 0:
+                    del pair_frequencies[p]
+                pair_to_words[p].discard(wid)
+
+            new_tokens = []
+            i = 0
+            while i < len(tokens):
+                if i < len(tokens) - 1 and (tokens[i], tokens[i + 1]) == best_pair:
+                    new_tokens.append(new_id)
+                    i += 2
+                else:
+                    new_tokens.append(tokens[i])
+                    i += 1
+
+            words[wid] = new_tokens
+
+            # Add new pair counts to frequencies and index
+            for i in range(len(new_tokens) - 1):
+                p = (new_tokens[i], new_tokens[i + 1])
+                pair_frequencies[p] += freq
+                pair_to_words[p].add(wid)
+
+        # Clean up the merged pair from index
+        if best_pair in pair_to_words:
+            del pair_to_words[best_pair]
+
+    return vocab, merges
+
+
+def train_bpe_tokenizer_5(
+    input_path: str,
+    vocab_size: int,
+    special_tokens: list[str],
+    num_processes: int | None = None,
+) -> tuple[dict[int, bytes], list[tuple[bytes, bytes]]]:
+    """
+    Train a BPE tokenizer on the input data.
+
+    This implementation builds on the `train_bpe_tokenizer_3` by:
+    - Using a heap-based O(log P) best-pair lookup
+    - Using an inverted index for O(affected) updates instead of O(all words)
+
+    Args:
+        input_path: Path to the input corpus file.
+        vocab_size: Target vocabulary size.
+        special_tokens: List of special tokens to preserve.
+        num_processes: Number of parallel processes. Defaults to CPU count.
+
+    Returns:
+        vocab: Mapping from token ID to bytes.
+        merges: Ordered list of BPE merges.
+    """
+    if num_processes is None:
+        num_processes = os.cpu_count() or 4
+
+    num_chunks = num_processes * 3
+
+    chunks: list[str] = []
+
+    with open(input_path, "rb") as f:
+        boundary_token = special_tokens[0].encode("utf-8") if special_tokens else b"\n"
+        chunk_boundaries = find_chunk_boundaries(f, num_chunks, boundary_token)
+
+        for start, end in zip(chunk_boundaries[:-1], chunk_boundaries[1:]):
+            f.seek(start)
+            chunk: str = f.read(end - start).decode("utf-8", errors="ignore")
+            chunks.append(chunk)
+
+    with Pool(num_processes) as pool:
+        args = [(chunk, special_tokens) for chunk in chunks]
+        chunk_frequencies = list(
+            tqdm(
+                pool.imap(_pretokenize_chunk_wrapper, args, chunksize=1),
+                total=len(chunks),
+                desc="Pretokenizing chunks",
+            )
+        )
+
+    word_frequencies_raw: dict[tuple[int, ...], int] = {}
+    for chunk_frequency in chunk_frequencies:
+        for word, frequency in chunk_frequency.items():
+            word_frequencies_raw[word] = word_frequencies_raw.get(word, 0) + frequency
+
+    vocab = {idx: bytes([idx]) for idx in range(256)}
+
+    words: dict[int, list[int]] = {}  # word_id -> mutable token list
+    word_freqs: dict[int, int] = {}  # word_id -> frequency
+    word_id = 0
+    for word_tuple, freq in word_frequencies_raw.items():
+        words[word_id] = list(word_tuple)
+        word_freqs[word_id] = freq
+        word_id += 1
+
+    # Add special tokens to vocab
+    special_token_id = len(vocab)
+    for special_token in special_tokens:
+        vocab[special_token_id] = special_token.encode("utf-8")
+        special_token_id += 1
+
+    merges: list[tuple[bytes, bytes]] = []
+    num_merges = vocab_size - len(vocab)
+
+    # Build pair frequency counts and inverted index
+    pair_frequencies: dict[tuple[int, int], int] = defaultdict(int)
+    pair_to_words: dict[tuple[int, int], set[int]] = defaultdict(set)
+
+    for wid, tokens in words.items():
+        freq = word_freqs[wid]
+        for i in range(len(tokens) - 1):
+            pair = (tokens[i], tokens[i + 1])
+            pair_frequencies[pair] += freq
+            pair_to_words[pair].add(wid)
+
+    # Above this is the same as v4
+
+    # Build max-heap (using negative freq for min-heap)
+    def make_heap_entry(pair: tuple[int, int]) -> tuple[int, tuple[ReversedBytes, ReversedBytes], tuple[int, int]]:
+        freq = pair_frequencies[pair]
+        # Lexicographic tiebreaker using reversed comparison (so largest bytes wins)
+        lex = (ReversedBytes(vocab[pair[0]]), ReversedBytes(vocab[pair[1]]))
+        return (-freq, lex, pair)
+
+    heap = [make_heap_entry(p) for p in pair_frequencies]
+    heapq.heapify(heap)
+
+    # Track valid pairs (for lazy deletion)
+    valid_pairs = set(pair_frequencies.keys())
+
+    for _ in tqdm(range(num_merges), desc="Computing merges", unit="merge"):
+        best_pair = None
+        while heap:
+            neg_freq, lex, pair = heapq.heappop(heap)
+
+            # Skip if pair was invalidated
+            if pair not in valid_pairs:
+                continue
+
+            # Skip if frequency is stale (was updated since heap entry created)
+            current_freq = pair_frequencies.get(pair, 0)
+            if current_freq != -neg_freq:
+                # Re-push with updated frequency if still valid
+                if current_freq > 0:
+                    heapq.heappush(heap, make_heap_entry(pair))
+                continue
+
+            # Found valid, current entry
+            best_pair = pair
+            break
+
+        if best_pair is None:
+            break
+
+        # Create new merged token
+        new_id = len(vocab)
+        vocab[new_id] = vocab[best_pair[0]] + vocab[best_pair[1]]
+        merges.append((vocab[best_pair[0]], vocab[best_pair[1]]))
+
+        # Update only affected words (via inverted index)
+        affected_word_ids = list(pair_to_words.get(best_pair, set()))
+
+        for wid in affected_word_ids:
+            tokens = words[wid]
+            freq = word_freqs[wid]
+
+            # Remove old pair counts from frequencies and index
+            for i in range(len(tokens) - 1):
+                p = (tokens[i], tokens[i + 1])
+                pair_frequencies[p] -= freq
+                if pair_frequencies[p] <= 0:
+                    del pair_frequencies[p]
+                    valid_pairs.discard(p)
+                pair_to_words[p].discard(wid)
+
+            new_tokens = []
+            i = 0
+            while i < len(tokens):
+                if i < len(tokens) - 1 and (tokens[i], tokens[i + 1]) == best_pair:
+                    new_tokens.append(new_id)
+                    i += 2
+                else:
+                    new_tokens.append(tokens[i])
+                    i += 1
+
+            words[wid] = new_tokens
+
+            # Add new pair counts to frequencies and index
+            for i in range(len(new_tokens) - 1):
+                p = (new_tokens[i], new_tokens[i + 1])
+                pair_frequencies[p] += freq
+                valid_pairs.add(p)
+                pair_to_words[p].add(wid)
+                # Push new/updated pair to heap
+                heapq.heappush(heap, make_heap_entry(p))
+
+        valid_pairs.discard(best_pair)
+        if best_pair in pair_to_words:
+            del pair_to_words[best_pair]
+
+        # Heap compaction - rebuild if too many stale entries
+        if len(heap) > 3 * len(valid_pairs):
+            heap = [make_heap_entry(p) for p in valid_pairs if p in pair_frequencies]
+            heapq.heapify(heap)
+
+    return vocab, merges
+
+
 if __name__ == "__main__":
     import os
     import pickle
     import time
     import tracemalloc
 
-    # INPUT_PATH = "./data/TinyStoriesV2-GPT4-train.txt"
-    INPUT_PATH = "./data/TinyStoriesV2-GPT4-valid.txt"
+    INPUT_PATH = "./data/TinyStoriesV2-GPT4-train.txt"
     # INPUT_PATH = "./data/owt_train.txt"
     VOCAB_SIZE = 10_000
     # VOCAB_SIZE = 32_000
@@ -492,11 +828,10 @@ if __name__ == "__main__":
     tracemalloc.start()
     start_time = time.time()
 
-    vocab, merges = train_bpe_tokenizer_parallel(
+    vocab, merges = train_bpe_tokenizer_5(
         INPUT_PATH,
         VOCAB_SIZE,
         SPECIAL_TOKENS,
-        save_frequencies_path=f"{RESULTS_DIR}/{save_file_name}_token_frequencies.jsonl",
     )
 
     end_time = time.time()
